@@ -8,7 +8,6 @@ const router = express.Router();
 const UPLOAD_SECRET =
   process.env.UPLOAD_SECRET || 'my-super-secret-upload-key-2026-xyz789';
 
-
 // =====================
 // GET ALL IMAGES
 // =====================
@@ -47,54 +46,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-
 // =====================
-// UPLOAD FILE
-// =====================
-router.post('/', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: 'No image selected',
-      });
-    }
-
-    const { title } = req.body;
-
-    const result = await cloudinary.uploader.upload(
-      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
-      {
-        folder: 'gallery',
-        type: 'private',
-      }
-    );
-
-    await pool.query(
-      `
-      INSERT INTO images(title, cloudinary_id)
-      VALUES($1,$2)
-      `,
-      [title, result.public_id]
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Image uploaded successfully',
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
-
-
-// =====================
-// UPLOAD BY URL
+// UPLOAD BY URL - SPECIFIC ROUTE COMES FIRST
 // =====================
 router.post('/url', async (req, res) => {
   try {
@@ -153,13 +106,64 @@ router.post('/url', async (req, res) => {
   }
 });
 
+// =====================
+// UPLOAD FILE
+// =====================
+router.post('/', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: 'No image selected',
+      });
+    }
+
+    const { title } = req.body;
+
+    const result = await cloudinary.uploader.upload(
+      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+      {
+        folder: 'gallery',
+        type: 'private',
+      }
+    );
+
+    await pool.query(
+      `
+      INSERT INTO images(title, cloudinary_id)
+      VALUES($1,$2)
+      `,
+      [title, result.public_id]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Image uploaded successfully',
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 // =====================
-// DELETE IMAGE
+// DELETE IMAGE - PARAMETERIZED ROUTE COMES AFTER SPECIFIC ROUTES
 // =====================
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Validate that id is a number
+    if (isNaN(parseInt(id))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid ID format'
+      });
+    }
 
     const image = await pool.query(
       'SELECT * FROM images WHERE id=$1',
@@ -198,7 +202,6 @@ router.delete('/:id', async (req, res) => {
     });
   }
 });
-
 
 // =====================
 // DELETE ALL
