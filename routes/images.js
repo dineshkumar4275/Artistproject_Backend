@@ -4,213 +4,233 @@ import cloudinary from '../config/cloudinary.js';
 import upload from '../middleware/upload.js';
 
 const router = express.Router();
-const UPLOAD_SECRET = process.env.UPLOAD_SECRET || 'my-super-secret-upload-key-2026-xyz789';
 
-// GET all images - Returns PRIVATE signed URLs
+const UPLOAD_SECRET =
+  process.env.UPLOAD_SECRET || 'my-super-secret-upload-key-2026-xyz789';
+
+
+// =====================
+// GET ALL IMAGES
+// =====================
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM images ORDER BY created_at DESC');
-    
-    const images = result.rows.map(row => {
-      // Generate a signed URL that expires in 1 hour
+    const result = await pool.query(
+      'SELECT * FROM images ORDER BY created_at DESC'
+    );
+
+    const images = result.rows.map((row) => {
       const signedUrl = cloudinary.utils.private_download_url(
         row.cloudinary_id,
-        'jpg', // or get from row
-        { expires_at: Math.floor(Date.now() / 1000) + 3600 } // 1 hour expiry
+        'jpg',
+        {
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        }
       );
-      
+
       return {
         id: row.id,
         title: row.title,
-        url: signedUrl, // Private signed URL
-        imageUrl: signedUrl, // Private signed URL
+        imageUrl: signedUrl,
         cloudinary_id: row.cloudinary_id,
-        created_at: row.created_at,
-        createdAt: row.created_at
+        createdAt: row.created_at,
       };
     });
-    
+
     res.json(images);
   } catch (error) {
-    console.error('Error fetching images:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch images' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-// POST upload image file - Upload as PRIVATE
+
+// =====================
+// UPLOAD FILE
+// =====================
 router.post('/', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ success: false, error: 'No image file provided' });
+      return res.status(400).json({
+        success: false,
+        error: 'No image selected',
+      });
     }
 
     const { title } = req.body;
-    if (!title) {
-      return res.status(400).json({ success: false, error: 'Title is required' });
-    }
 
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: 'gallery',
-          resource_type: 'auto',
-          type: 'private', // 🔒 Make it private!
-          transformation: [
-            { width: 1200, height: 800, crop: 'fill', quality: 'auto' }
-          ]
-        },
-        (error, result) => {
-          if (error) reject(error);
-          resolve(result);
-        }
-      );
-      
-      const b64 = Buffer.from(req.file.buffer).toString('base64');
-      const dataURI = `data:${req.file.mimetype};base64,${b64}`;
-      uploadStream.end(dataURI);
-    });
-
-    const query = `
-      INSERT INTO images (title, cloudinary_id, url, image_url)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `;
-    const values = [title, result.public_id, result.secure_url, result.secure_url];
-    const dbResult = await pool.query(query, values);
-
-    // Generate signed URL for response
-    const signedUrl = cloudinary.utils.private_download_url(
-      result.public_id,
-      'jpg',
-      { expires_at: Math.floor(Date.now() / 1000) + 3600 }
+    const result = await cloudinary.uploader.upload(
+      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+      {
+        folder: 'gallery',
+        type: 'private',
+      }
     );
 
-    const image = dbResult.rows[0];
+    await pool.query(
+      `
+      INSERT INTO images(title, cloudinary_id)
+      VALUES($1,$2)
+      `,
+      [title, result.public_id]
+    );
+
     res.status(201).json({
       success: true,
-      id: image.id,
-      title: image.title,
-      url: signedUrl,
-      imageUrl: signedUrl,
-      cloudinary_id: image.cloudinary_id,
-      created_at: image.created_at,
-      createdAt: image.created_at
+      message: 'Image uploaded successfully',
     });
   } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ success: false, error: 'Failed to upload image' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-// 🔒 POST upload image by URL - Upload as PRIVATE
+
+// =====================
+// UPLOAD BY URL
+// =====================
 router.post('/url', async (req, res) => {
-  console.log('🔄 POST /url called');
-  
   try {
     const { imageUrl, title, secret } = req.body;
-    
-    if (!secret || secret !== UPLOAD_SECRET) {
-      return res.status(403).json({ 
-        success: false, 
-        error: 'Unauthorized: Invalid secret key' 
-      });
-    }
-    
-    if (!imageUrl || !title) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Image URL and title are required' 
+
+    if (secret !== UPLOAD_SECRET) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized: Invalid secret key',
       });
     }
 
-    console.log('📤 Uploading to Cloudinary...');
+    if (!imageUrl || !title) {
+      return res.status(400).json({
+        success: false,
+        error: 'Image URL and title required',
+      });
+    }
+
     const result = await cloudinary.uploader.upload(imageUrl, {
       folder: 'gallery',
-      resource_type: 'auto',
-      type: 'private', // 🔒 Make it private!
-      transformation: [
-        { width: 1200, height: 800, crop: 'fill', quality: 'auto' }
-      ]
+      type: 'private',
     });
 
-    console.log('✅ Cloudinary upload successful');
-
-    const query = `
-      INSERT INTO images (title, cloudinary_id, url, image_url)
-      VALUES ($1, $2, $3, $4)
+    const dbResult = await pool.query(
+      `
+      INSERT INTO images(title, cloudinary_id)
+      VALUES($1,$2)
       RETURNING *
-    `;
-    const values = [title, result.public_id, result.secure_url, result.secure_url];
-    const dbResult = await pool.query(query, values);
-    
-    console.log('✅ Database save successful');
+      `,
+      [title, result.public_id]
+    );
 
-    // Generate signed URL for response
     const signedUrl = cloudinary.utils.private_download_url(
       result.public_id,
       'jpg',
-      { expires_at: Math.floor(Date.now() / 1000) + 3600 }
+      {
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }
     );
 
-    const image = dbResult.rows[0];
     res.status(201).json({
       success: true,
-      id: image.id,
-      title: image.title,
-      url: signedUrl,
+      id: dbResult.rows[0].id,
+      title,
       imageUrl: signedUrl,
-      cloudinary_id: image.cloudinary_id,
-      created_at: image.created_at,
-      createdAt: image.created_at
+      cloudinary_id: result.public_id,
     });
   } catch (error) {
-    console.error('❌ Upload error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to upload image from URL',
-      details: error.message 
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 });
 
-// DELETE image
+
+// =====================
+// DELETE IMAGE
+// =====================
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const imageQuery = await pool.query('SELECT * FROM images WHERE id = $1', [id]);
-    
-    if (imageQuery.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Image not found' });
+    const image = await pool.query(
+      'SELECT * FROM images WHERE id=$1',
+      [id]
+    );
+
+    if (image.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Image not found',
+      });
     }
 
-    const image = imageQuery.rows[0];
+    await cloudinary.uploader.destroy(
+      image.rows[0].cloudinary_id,
+      {
+        type: 'private',
+      }
+    );
 
-    await cloudinary.uploader.destroy(image.cloudinary_id);
-    await pool.query('DELETE FROM images WHERE id = $1', [id]);
+    await pool.query(
+      'DELETE FROM images WHERE id=$1',
+      [id]
+    );
 
-    res.json({ success: true, message: 'Image deleted successfully' });
+    res.json({
+      success: true,
+      message: 'Image deleted successfully',
+    });
   } catch (error) {
-    console.error('Delete error:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete image' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
-// DELETE all images
+
+// =====================
+// DELETE ALL
+// =====================
 router.delete('/', async (req, res) => {
   try {
-    const images = await pool.query('SELECT * FROM images');
+    const images = await pool.query(
+      'SELECT * FROM images'
+    );
 
     for (const image of images.rows) {
-      await cloudinary.uploader.destroy(image.cloudinary_id);
+      await cloudinary.uploader.destroy(
+        image.cloudinary_id,
+        {
+          type: 'private',
+        }
+      );
     }
 
     await pool.query('DELETE FROM images');
 
-    res.json({ success: true, message: 'All images deleted successfully' });
+    res.json({
+      success: true,
+      message: 'All images deleted',
+    });
   } catch (error) {
-    console.error('Delete all error:', error);
-    res.status(500).json({ success: false, error: 'Failed to delete all images' });
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
