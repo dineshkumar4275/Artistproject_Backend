@@ -5,9 +5,9 @@ import upload from '../middleware/upload.js';
 
 const router = express.Router();
 
-// =====================
+// =========================
 // GET ALL IMAGES
-// =====================
+// =========================
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
@@ -31,6 +31,7 @@ router.get('/', async (req, res) => {
     res.json(images);
   } catch (error) {
     console.error(error);
+
     res.status(500).json({
       success: false,
       error: error.message,
@@ -38,9 +39,9 @@ router.get('/', async (req, res) => {
   }
 });
 
-// =====================
+// =========================
 // UPLOAD IMAGE FILE
-// =====================
+// =========================
 router.post('/', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -62,21 +63,23 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     const dbResult = await pool.query(
       `
-      INSERT INTO images(title, cloudinary_id)
-      VALUES($1,$2)
+      INSERT INTO images (title, cloudinary_id, url)
+      VALUES ($1, $2, $3)
       RETURNING *
       `,
-      [title, uploadResult.public_id]
+      [
+        title || 'Untitled',
+        uploadResult.public_id,
+        uploadResult.secure_url,
+      ]
     );
 
     res.status(201).json({
       success: true,
-      id: dbResult.rows[0].id,
-      title,
-      cloudinary_id: uploadResult.public_id,
+      image: dbResult.rows[0],
     });
   } catch (error) {
-    console.error(error);
+    console.error('Upload error:', error);
 
     res.status(500).json({
       success: false,
@@ -85,9 +88,9 @@ router.post('/', upload.single('image'), async (req, res) => {
   }
 });
 
-// =====================
+// =========================
 // UPLOAD IMAGE BY URL
-// =====================
+// =========================
 router.post('/url', async (req, res) => {
   try {
     const { imageUrl, title } = req.body;
@@ -109,11 +112,15 @@ router.post('/url', async (req, res) => {
 
     const dbResult = await pool.query(
       `
-      INSERT INTO images(title, cloudinary_id)
-      VALUES($1,$2)
+      INSERT INTO images (title, cloudinary_id, url)
+      VALUES ($1, $2, $3)
       RETURNING *
       `,
-      [title, uploadResult.public_id]
+      [
+        title,
+        uploadResult.public_id,
+        uploadResult.secure_url,
+      ]
     );
 
     const signedUrl = cloudinary.utils.private_download_url(
@@ -132,7 +139,7 @@ router.post('/url', async (req, res) => {
       cloudinary_id: uploadResult.public_id,
     });
   } catch (error) {
-    console.error(error);
+    console.error('Upload URL error:', error);
 
     res.status(500).json({
       success: false,
@@ -141,15 +148,15 @@ router.post('/url', async (req, res) => {
   }
 });
 
-// =====================
-// DELETE IMAGE
-// =====================
+// =========================
+// DELETE SINGLE IMAGE
+// =========================
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
     const image = await pool.query(
-      'SELECT * FROM images WHERE id=$1',
+      'SELECT * FROM images WHERE id = $1',
       [id]
     );
 
@@ -168,7 +175,7 @@ router.delete('/:id', async (req, res) => {
     );
 
     await pool.query(
-      'DELETE FROM images WHERE id=$1',
+      'DELETE FROM images WHERE id = $1',
       [id]
     );
 
@@ -177,7 +184,7 @@ router.delete('/:id', async (req, res) => {
       message: 'Image deleted successfully',
     });
   } catch (error) {
-    console.error(error);
+    console.error('Delete error:', error);
 
     res.status(500).json({
       success: false,
@@ -186,12 +193,14 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// =====================
+// =========================
 // DELETE ALL IMAGES
-// =====================
+// =========================
 router.delete('/', async (req, res) => {
   try {
-    const images = await pool.query('SELECT * FROM images');
+    const images = await pool.query(
+      'SELECT * FROM images'
+    );
 
     for (const image of images.rows) {
       await cloudinary.uploader.destroy(
@@ -202,14 +211,16 @@ router.delete('/', async (req, res) => {
       );
     }
 
-    await pool.query('DELETE FROM images');
+    await pool.query(
+      'DELETE FROM images'
+    );
 
     res.json({
       success: true,
       message: 'All images deleted successfully',
     });
   } catch (error) {
-    console.error(error);
+    console.error('Delete all error:', error);
 
     res.status(500).json({
       success: false,
