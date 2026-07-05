@@ -12,3 +12,4 @@ cloudinary.config({
 console.log('✅ Cloudinary configured successfully');
 
 export default cloudinary;
+
