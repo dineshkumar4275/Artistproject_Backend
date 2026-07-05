@@ -105,6 +105,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+<<<<<<< HEAD
 // ✅ CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',
@@ -131,10 +132,17 @@ app.use(cors({
 }));
 
 app.options('*', cors());
+=======
+app.use(cors());
+>>>>>>> f75d238021fa897788e846d26944fabe9f0e8090
 
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.urlencoded({
+  extended: true,
+  limit: '50mb'
+}));
 
+<<<<<<< HEAD
 // Logging middleware
 app.use((req, res, next) => {
   console.log(`🔄 ${req.method} ${req.url}`);
@@ -153,20 +161,24 @@ app.get('/', (req, res) => {
       'upload-url': 'POST /api/images/url',
       delete: 'DELETE /api/images/:id'
     }
+=======
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Artist Portfolio API',
+    status: 'Running'
+>>>>>>> f75d238021fa897788e846d26944fabe9f0e8090
   });
 });
 
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
-    message: 'Server is running',
     timestamp: new Date().toISOString()
   });
 });
 
 app.use('/api/images', imageRoutes);
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -174,18 +186,8 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('❌ Server error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error'
-  });
-});
-
 app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📁 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🖼️  Images API: http://localhost:${PORT}/api/images`);
-  console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}\n`);
+  console.log(
+    `Server running on port ${PORT}`
+  );
 });
