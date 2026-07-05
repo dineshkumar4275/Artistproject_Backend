@@ -1,3 +1,4 @@
+// backend/config/cloudinary.js
 import { v2 as cloudinary } from 'cloudinary';
 import dotenv from 'dotenv';
 
@@ -11,5 +12,18 @@ cloudinary.config({
 
 console.log('✅ Cloudinary configured successfully');
 
-export default cloudinary;
+// Helper to generate signed URL
+export const getSignedUrl = (publicId, expiresIn = 3600) => {
+  try {
+    return cloudinary.utils.private_download_url(
+      publicId,
+      'jpg',
+      { expires_at: Math.floor(Date.now() / 1000) + expiresIn }
+    );
+  } catch (error) {
+    console.error('Error generating signed URL:', error);
+    return null;
+  }
+};
 
+export default cloudinary;
