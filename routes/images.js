@@ -69,10 +69,9 @@ router.get('/photography', async (req, res) => {
 });
 
 // =======================
-// UPLOAD PHOTOGRAPHY IMAGE - WORKING VERSION
+// UPLOAD PHOTOGRAPHY IMAGE - SIMPLIFIED VERSION
 // =======================
 router.post('/photography', upload.single('image'), async (req, res) => {
-  console.log("🔥 NEW PHOTOGRAPHY ROUTE RUNNING");
   try {
     console.log('📸 Photography upload started');
     
@@ -80,22 +79,30 @@ router.post('/photography', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
 
-    const { title, description } = req.body;
+    const { title, description, isFeatured } = req.body;
     if (!title || !title.trim()) {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
-    // Upload to Cloudinary
+    // Check if JPEG
+    const isJpeg = req.file.mimetype.includes('jpeg') || req.file.mimetype.includes('jpg');
+    if (!isJpeg) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Only JPEG/JPG images are allowed for photography' 
+      });
+    }
+
     console.log('📤 Uploading to Cloudinary...');
     
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'photography',
-          resource_type: 'image',
+          resource_type: 'auto',
           type: 'private',
           transformation: [
-            { width: 1200, height: 1200, crop: 'limit', quality: 'auto:good' }
+            { width: 1600, height: 1200, crop: 'fill', quality: 'auto' }
           ]
         },
         (error, result) => {
@@ -104,27 +111,55 @@ router.post('/photography', upload.single('image'), async (req, res) => {
         }
       );
       
-      // Convert buffer to base64 and upload
       const b64 = Buffer.from(req.file.buffer).toString('base64');
       const dataURI = `data:${req.file.mimetype};base64,${b64}`;
       uploadStream.end(dataURI);
     });
 
-    console.log('✅ Cloudinary upload successful:', result.public_id);
+    console.log('✅ Cloudinary upload successful');
 
-    // Simple INSERT - only use columns that definitely exist
-    const query = `
-      INSERT INTO images (title, cloudinary_id, url, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `;
-    const values = [
-      title.trim(), 
-      result.public_id, 
-      result.secure_url, 
-      'photography'
-    ];
+    // ✅ SIMPLE INSERT - Only use columns we know exist
+    // First check if description column exists
+    const descCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'images' AND column_name = 'description'
+    `);
     
+    const hasDescription = descCheck.rows.length > 0;
+    
+    let query, values;
+    
+    if (hasDescription) {
+      query = `
+        INSERT INTO images (title, description, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `;
+      values = [
+        title.trim(), 
+        description || '', 
+        result.public_id, 
+        result.secure_url, 
+        'photography',
+        isFeatured === 'true' || false
+      ];
+    } else {
+      query = `
+        INSERT INTO images (title, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+      values = [
+        title.trim(), 
+        result.public_id, 
+        result.secure_url, 
+        'photography',
+        isFeatured === 'true' || false
+      ];
+    }
+
+    console.log('📝 Query:', query);
     const dbResult = await pool.query(query, values);
     const image = dbResult.rows[0];
     
@@ -144,10 +179,12 @@ router.post('/photography', upload.single('image'), async (req, res) => {
     
   } catch (error) {
     console.error('❌ Upload error:', error);
+    console.error('❌ Stack:', error.stack);
     res.status(500).json({ 
       success: false, 
       error: 'Failed to upload photography image',
-      details: error.message 
+      details: error.message,
+      stack: error.stack
     });
   }
 });
@@ -187,18 +224,45 @@ router.post('/url', async (req, res) => {
 
     console.log('✅ Cloudinary upload successful');
 
-    const query = `
-      INSERT INTO images (title, cloudinary_id, url, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `;
-    const values = [
-      title, 
-      result.public_id, 
-      result.secure_url, 
-      'gallery'
-    ];
+    const descCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'images' AND column_name = 'description'
+    `);
     
+    const hasDescription = descCheck.rows.length > 0;
+    
+    let query, values;
+    
+    if (hasDescription) {
+      query = `
+        INSERT INTO images (title, description, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `;
+      values = [
+        title, 
+        description || '', 
+        result.public_id, 
+        result.secure_url, 
+        'gallery',
+        isFeatured === 'true' || false
+      ];
+    } else {
+      query = `
+        INSERT INTO images (title, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+      values = [
+        title, 
+        result.public_id, 
+        result.secure_url, 
+        'gallery',
+        isFeatured === 'true' || false
+      ];
+    }
+
     const dbResult = await pool.query(query, values);
     const image = dbResult.rows[0];
     
@@ -260,18 +324,45 @@ router.post('/', upload.single('image'), async (req, res) => {
       uploadStream.end(dataURI);
     });
 
-    const query = `
-      INSERT INTO images (title, cloudinary_id, url, type)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `;
-    const values = [
-      title, 
-      result.public_id, 
-      result.secure_url, 
-      'gallery'
-    ];
+    const descCheck = await pool.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'images' AND column_name = 'description'
+    `);
     
+    const hasDescription = descCheck.rows.length > 0;
+    
+    let query, values;
+    
+    if (hasDescription) {
+      query = `
+        INSERT INTO images (title, description, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING *
+      `;
+      values = [
+        title, 
+        description || '', 
+        result.public_id, 
+        result.secure_url, 
+        'gallery',
+        isFeatured === 'true' || false
+      ];
+    } else {
+      query = `
+        INSERT INTO images (title, cloudinary_id, url, type, is_featured)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+      values = [
+        title, 
+        result.public_id, 
+        result.secure_url, 
+        'gallery',
+        isFeatured === 'true' || false
+      ];
+    }
+
     const dbResult = await pool.query(query, values);
     const image = dbResult.rows[0];
 
