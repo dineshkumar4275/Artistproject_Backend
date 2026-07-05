@@ -24,12 +24,11 @@ router.get('/', async (req, res) => {
     const images = result.rows.map(row => ({
       id: row.id,
       title: row.title,
-      description: row.description,
+      description: row.description || '',
       url: getSignedUrl(row.cloudinary_id),
-      imageUrl: getSignedUrl(row.cloudinary_id),
       cloudinary_id: row.cloudinary_id,
       type: row.type || 'gallery',
-      is_featured: row.is_featured,
+      is_featured: row.is_featured || false,
       created_at: row.created_at,
       createdAt: row.created_at
     }));
@@ -53,12 +52,11 @@ router.get('/photography', async (req, res) => {
     const images = result.rows.map(row => ({
       id: row.id,
       title: row.title,
-      description: row.description,
+      description: row.description || '',
       url: getSignedUrl(row.cloudinary_id),
-      imageUrl: getSignedUrl(row.cloudinary_id),
       cloudinary_id: row.cloudinary_id,
       type: row.type || 'photography',
-      is_featured: row.is_featured,
+      is_featured: row.is_featured || false,
       created_at: row.created_at,
       createdAt: row.created_at
     }));
@@ -71,88 +69,33 @@ router.get('/photography', async (req, res) => {
 });
 
 // =======================
-// GET ALL IMAGES (Combined)
+// UPLOAD PHOTOGRAPHY IMAGE - WORKING VERSION
 // =======================
-router.get('/all', async (req, res) => {
+router.post('/photography', upload.single('image'), async (req, res) => {
+  console.log("🔥 NEW PHOTOGRAPHY ROUTE RUNNING");
   try {
-    const result = await pool.query(
-      "SELECT * FROM images ORDER BY created_at DESC"
-    );
+    console.log('📸 Photography upload started');
     
-    const images = result.rows.map(row => ({
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      url: getSignedUrl(row.cloudinary_id),
-      imageUrl: getSignedUrl(row.cloudinary_id),
-      cloudinary_id: row.cloudinary_id,
-      type: row.type || 'gallery',
-      is_featured: row.is_featured,
-      created_at: row.created_at,
-      createdAt: row.created_at
-    }));
-    
-    res.json(images);
-  } catch (error) {
-    console.error('Error fetching all images:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch images' });
-  }
-});
-
-// =======================
-// GET SINGLE IMAGE
-// =======================
-router.get('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query('SELECT * FROM images WHERE id = $1', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Image not found' });
-    }
-    
-    const row = result.rows[0];
-    res.json({
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      url: getSignedUrl(row.cloudinary_id),
-      imageUrl: getSignedUrl(row.cloudinary_id),
-      cloudinary_id: row.cloudinary_id,
-      type: row.type || 'gallery',
-      is_featured: row.is_featured,
-      created_at: row.created_at,
-      createdAt: row.created_at
-    });
-  } catch (error) {
-    console.error('Error fetching image:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch image' });
-  }
-});
-
-// =======================
-// UPLOAD GALLERY IMAGE FILE
-// =======================
-router.post('/', upload.single('image'), async (req, res) => {
-  try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
 
-    const { title, description, isFeatured } = req.body;
-    if (!title) {
+    const { title, description } = req.body;
+    if (!title || !title.trim()) {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
     // Upload to Cloudinary
+    console.log('📤 Uploading to Cloudinary...');
+    
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'gallery',
-          resource_type: 'auto',
+          folder: 'photography',
+          resource_type: 'image',
           type: 'private',
           transformation: [
-            { width: 1200, height: 800, crop: 'fill', quality: 'auto' }
+            { width: 1200, height: 1200, crop: 'limit', quality: 'auto:good' }
           ]
         },
         (error, result) => {
@@ -161,44 +104,51 @@ router.post('/', upload.single('image'), async (req, res) => {
         }
       );
       
+      // Convert buffer to base64 and upload
       const b64 = Buffer.from(req.file.buffer).toString('base64');
       const dataURI = `data:${req.file.mimetype};base64,${b64}`;
       uploadStream.end(dataURI);
     });
 
-    // Save to database
+    console.log('✅ Cloudinary upload successful:', result.public_id);
+
+    // Simple INSERT - only use columns that definitely exist
     const query = `
-      INSERT INTO images (title, description, cloudinary_id, url, image_url, type, is_featured)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO images (title, cloudinary_id, url, type)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `;
     const values = [
-      title, 
-      description || '', 
+      title.trim(), 
       result.public_id, 
       result.secure_url, 
-      result.secure_url, 
-      'gallery',
-      isFeatured === 'true'
+      'photography'
     ];
+    
     const dbResult = await pool.query(query, values);
-
     const image = dbResult.rows[0];
+    
+    console.log('✅ Database save successful');
+
     res.status(201).json({
       id: image.id,
       title: image.title,
-      description: image.description,
+      description: image.description || '',
       url: getSignedUrl(image.cloudinary_id),
-      imageUrl: getSignedUrl(image.cloudinary_id),
       cloudinary_id: image.cloudinary_id,
-      type: image.type || 'gallery',
-      is_featured: image.is_featured,
+      type: image.type || 'photography',
+      is_featured: image.is_featured || false,
       created_at: image.created_at,
       createdAt: image.created_at
     });
+    
   } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ success: false, error: 'Failed to upload image' });
+    console.error('❌ Upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload photography image',
+      details: error.message 
+    });
   }
 });
 
@@ -211,7 +161,6 @@ router.post('/url', async (req, res) => {
   try {
     const { imageUrl, title, description, isFeatured, secret } = req.body;
     
-    // Verify secret
     if (!secret || secret !== UPLOAD_SECRET) {
       return res.status(403).json({ 
         success: false, 
@@ -238,35 +187,31 @@ router.post('/url', async (req, res) => {
 
     console.log('✅ Cloudinary upload successful');
 
-    // Save to database
     const query = `
-      INSERT INTO images (title, description, cloudinary_id, url, image_url, type, is_featured)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO images (title, cloudinary_id, url, type)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `;
     const values = [
       title, 
-      description || '', 
       result.public_id, 
       result.secure_url, 
-      result.secure_url, 
-      'gallery',
-      isFeatured === 'true'
+      'gallery'
     ];
+    
     const dbResult = await pool.query(query, values);
+    const image = dbResult.rows[0];
     
     console.log('✅ Database save successful');
 
-    const image = dbResult.rows[0];
     res.status(201).json({
       id: image.id,
       title: image.title,
-      description: image.description,
+      description: image.description || '',
       url: getSignedUrl(image.cloudinary_id),
-      imageUrl: getSignedUrl(image.cloudinary_id),
       cloudinary_id: image.cloudinary_id,
       type: image.type || 'gallery',
-      is_featured: image.is_featured,
+      is_featured: image.is_featured || false,
       created_at: image.created_at,
       createdAt: image.created_at
     });
@@ -281,12 +226,10 @@ router.post('/url', async (req, res) => {
 });
 
 // =======================
-// UPLOAD PHOTOGRAPHY IMAGE
+// UPLOAD GALLERY IMAGE FILE
 // =======================
-router.post('/photography', upload.single('image'), async (req, res) => {
+router.post('/', upload.single('image'), async (req, res) => {
   try {
-    console.log('📸 Photography upload started');
-    
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
@@ -296,25 +239,14 @@ router.post('/photography', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
-    // Check if JPEG (or accept all for now)
-    const isJpeg = req.file.mimetype.includes('jpeg') || req.file.mimetype.includes('jpg');
-    if (!isJpeg) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Only JPEG/JPG images are allowed for photography' 
-      });
-    }
-
-    console.log('📤 Uploading to Cloudinary...');
-    
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'photography',
+          folder: 'gallery',
           resource_type: 'auto',
           type: 'private',
           transformation: [
-            { width: 1600, height: 1200, crop: 'fill', quality: 'auto' }
+            { width: 1200, height: 800, crop: 'fill', quality: 'auto' }
           ]
         },
         (error, result) => {
@@ -328,89 +260,35 @@ router.post('/photography', upload.single('image'), async (req, res) => {
       uploadStream.end(dataURI);
     });
 
-    console.log('✅ Cloudinary upload successful');
-
     const query = `
-      INSERT INTO images (title, description, cloudinary_id, url, image_url, type, is_featured)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      INSERT INTO images (title, cloudinary_id, url, type)
+      VALUES ($1, $2, $3, $4)
       RETURNING *
     `;
     const values = [
       title, 
-      description || '', 
       result.public_id, 
       result.secure_url, 
-      result.secure_url, 
-      'photography',
-      isFeatured === 'true'
+      'gallery'
     ];
-    const dbResult = await pool.query(query, values);
     
-    console.log('✅ Database save successful');
-
+    const dbResult = await pool.query(query, values);
     const image = dbResult.rows[0];
+
     res.status(201).json({
       id: image.id,
       title: image.title,
-      description: image.description,
+      description: image.description || '',
       url: getSignedUrl(image.cloudinary_id),
-      imageUrl: getSignedUrl(image.cloudinary_id),
-      cloudinary_id: image.cloudinary_id,
-      type: image.type || 'photography',
-      is_featured: image.is_featured,
-      created_at: image.created_at,
-      createdAt: image.created_at
-    });
-    
-  } catch (error) {
-    console.error('❌ Upload error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to upload photography image',
-      details: error.message 
-    });
-  }
-});
-
-// =======================
-// UPDATE IMAGE
-// =======================
-router.put('/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, description, isFeatured } = req.body;
-
-    const result = await pool.query(
-      `UPDATE images 
-       SET title = COALESCE($1, title), 
-           description = COALESCE($2, description), 
-           is_featured = COALESCE($3, is_featured),
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = $4
-       RETURNING *`,
-      [title, description, isFeatured === 'true', id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Image not found' });
-    }
-
-    const image = result.rows[0];
-    res.json({
-      id: image.id,
-      title: image.title,
-      description: image.description,
-      url: getSignedUrl(image.cloudinary_id),
-      imageUrl: getSignedUrl(image.cloudinary_id),
       cloudinary_id: image.cloudinary_id,
       type: image.type || 'gallery',
-      is_featured: image.is_featured,
+      is_featured: image.is_featured || false,
       created_at: image.created_at,
       createdAt: image.created_at
     });
   } catch (error) {
-    console.error('Update error:', error);
-    res.status(500).json({ success: false, error: 'Failed to update image' });
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, error: 'Failed to upload image', details: error.message });
   }
 });
 
@@ -429,10 +307,7 @@ router.delete('/:id', async (req, res) => {
 
     const image = imageQuery.rows[0];
 
-    // Delete from Cloudinary
     await cloudinary.uploader.destroy(image.cloudinary_id);
-    
-    // Delete from database
     await pool.query('DELETE FROM images WHERE id = $1', [id]);
 
     res.json({ success: true, message: 'Image deleted successfully' });

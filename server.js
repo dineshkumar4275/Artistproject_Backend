@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import imageRoutes from './routes/images.js';
+import authRoutes from './routes/auth.js'; // ✅ Import auth routes
 import { ensureTables } from './config/db.js';
 
 dotenv.config();
@@ -28,7 +29,7 @@ app.use(cors({
       callback(null, true);
     } else {
       console.log('❌ Blocked CORS from:', origin);
-      callback(null, true); // Allow all in development
+      callback(null, true);
     }
   },
   credentials: true,
@@ -38,8 +39,8 @@ app.use(cors({
 
 app.options('*', cors());
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -50,13 +51,18 @@ app.use((req, res, next) => {
 // Ensure tables exist on startup
 await ensureTables();
 
-// Routes
+// =======================
+// ✅ ROUTES
+// =======================
+
+// Health check
 app.get('/', (req, res) => {
   res.json({
     message: '🎨 Kamesh Fine Art API',
     status: '✅ Running',
     endpoints: {
       health: 'GET /api/health',
+      auth: 'POST /api/auth/login, POST /api/auth/register',
       gallery: 'GET /api/images',
       'gallery-upload': 'POST /api/images',
       'gallery-upload-url': 'POST /api/images/url',
@@ -79,6 +85,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ✅ AUTH ROUTES - MUST BE BEFORE IMAGE ROUTES
+app.use('/api/auth', authRoutes);
+
+// ✅ IMAGE ROUTES
 app.use('/api/images', imageRoutes);
 
 // 404 handler
@@ -102,6 +112,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
   console.log(`📁 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🔐 Auth: http://localhost:${PORT}/api/auth/login`);
   console.log(`🖼️  Gallery API: http://localhost:${PORT}/api/images`);
   console.log(`📸 Photography API: http://localhost:${PORT}/api/images/photography`);
   console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}\n`);
