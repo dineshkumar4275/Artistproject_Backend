@@ -1,9 +1,8 @@
-// backend/server.js
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import imageRoutes from './routes/images.js';
-import authRoutes from './routes/auth.js'; // ✅ ADD THIS IMPORT
 
 dotenv.config();
 
@@ -17,7 +16,6 @@ const allowedOrigins = [
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000',
   'https://artistproject-backend.vercel.app',
-  'https://artistproject-5ig5.vercel.app',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -28,7 +26,7 @@ app.use(cors({
       callback(null, true);
     } else {
       console.log('❌ Blocked CORS from:', origin);
-      callback(null, true);
+      callback(null, true); // Allow all in development
     }
   },
   credentials: true,
@@ -57,11 +55,7 @@ app.get('/', (req, res) => {
       images: 'GET /api/images',
       upload: 'POST /api/images',
       'upload-url': 'POST /api/images/url',
-      delete: 'DELETE /api/images/:id',
-      auth: {
-        login: 'POST /api/auth/login',
-        register: 'POST /api/auth/register'
-      }
+      delete: 'DELETE /api/images/:id'
     }
   });
 });
@@ -74,8 +68,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ USE AUTH ROUTES
-app.use('/api/auth', authRoutes);
 app.use('/api/images', imageRoutes);
 
 // 404 handler
@@ -99,6 +91,5 @@ app.listen(PORT, () => {
   console.log(`\n🚀 Server running on http://localhost:${PORT}`);
   console.log(`📁 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🖼️  Images API: http://localhost:${PORT}/api/images`);
-  console.log(`🔐 Auth API: http://localhost:${PORT}/api/auth`);
   console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}\n`);
 });
