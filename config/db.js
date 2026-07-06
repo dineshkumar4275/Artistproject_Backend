@@ -1,6 +1,7 @@
 // backend/config/db.js
 import pg from 'pg';
 import dotenv from 'dotenv';
+import bcrypt from 'bcryptjs'; // ✅ ADD THIS IMPORT
 
 dotenv.config();
 
@@ -61,8 +62,7 @@ export const ensureTables = async () => {
     } else {
       console.log('✅ Images table already exists');
       
-      // ✅ DROP image_url column if it exists (fix for the error)
-      console.log('🔍 Checking for image_url column...');
+      // Drop image_url if exists
       const imageUrlCheck = await pool.query(`
         SELECT column_name 
         FROM information_schema.columns 
@@ -158,6 +158,16 @@ export const ensureTables = async () => {
         );
       `);
       console.log('✅ Users table created successfully');
+      
+      // ✅ Create default admin user
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash('Admin123!', salt);
+      
+      await pool.query(
+        'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
+        ['admin@kameshfineart.com', hashedPassword, 'admin']
+      );
+      console.log('✅ Default admin user created (admin@kameshfineart.com / Admin123!)');
     }
 
     console.log('✅ All tables are ready!');
@@ -165,38 +175,5 @@ export const ensureTables = async () => {
     console.error('❌ Error ensuring tables:', error);
   }
 };
-// backend/config/db.js - Add this inside ensureTables function
-
-// Create users table
-const userTableCheck = await pool.query(`
-  SELECT EXISTS (
-    SELECT FROM information_schema.tables 
-    WHERE table_name = 'users'
-  );
-`);
-
-if (!userTableCheck.rows[0].exists) {
-  console.log('📦 Creating users table...');
-  await pool.query(`
-    CREATE TABLE users (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      password VARCHAR(255) NOT NULL,
-      role VARCHAR(50) DEFAULT 'user' CHECK (role IN ('admin', 'user')),
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `);
-  console.log('✅ Users table created successfully');
-  
-  // ✅ Create default admin user
-  const salt = await bcrypt.genSalt(10);
-  const hashedPassword = await bcrypt.hash('Admin123!', salt);
-  
-  await pool.query(
-    'INSERT INTO users (email, password, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
-    ['admin@kameshfineart.com', hashedPassword, 'admin']
-  );
-  console.log('✅ Default admin user created (admin@kameshfineart.com / Admin123!)');
-}
 
 export default pool;
