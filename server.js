@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import imageRoutes from './routes/images.js';
+import { ensureTables } from './config/db.js';
 
 dotenv.config();
 
@@ -45,11 +46,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ Debug: List all routes
-app.use((req, res, next) => {
-  console.log(`🔍 Route: ${req.method} ${req.url}`);
-  next();
-});
+// Ensure tables exist
+await ensureTables();
 
 // Routes
 app.get('/', (req, res) => {
@@ -76,7 +74,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Register image routes
+// Register image routes
 console.log('📦 Registering image routes...');
 app.use('/api/images', imageRoutes);
 console.log('✅ Image routes registered');
