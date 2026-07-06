@@ -1,4 +1,4 @@
-
+// backend/server.js
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -26,7 +26,7 @@ app.use(cors({
       callback(null, true);
     } else {
       console.log('❌ Blocked CORS from:', origin);
-      callback(null, true); // Allow all in development
+      callback(null, true);
     }
   },
   credentials: true,
@@ -45,6 +45,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// ✅ Debug: List all routes
+app.use((req, res, next) => {
+  console.log(`🔍 Route: ${req.method} ${req.url}`);
+  next();
+});
+
 // Routes
 app.get('/', (req, res) => {
   res.json({
@@ -53,8 +59,10 @@ app.get('/', (req, res) => {
     endpoints: {
       health: 'GET /api/health',
       images: 'GET /api/images',
-      upload: 'POST /api/images',
+      'upload-file': 'POST /api/images',
       'upload-url': 'POST /api/images/url',
+      'upload-photography': 'POST /api/images/photography',
+      'get-photography': 'GET /api/images/photography',
       delete: 'DELETE /api/images/:id'
     }
   });
@@ -68,10 +76,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ✅ Register image routes
+console.log('📦 Registering image routes...');
 app.use('/api/images', imageRoutes);
+console.log('✅ Image routes registered');
 
 // 404 handler
 app.use((req, res) => {
+  console.log(`❌ 404: ${req.method} ${req.url} not found`);
   res.status(404).json({
     success: false,
     error: 'Route not found'
@@ -83,7 +95,8 @@ app.use((err, req, res, next) => {
   console.error('❌ Server error:', err);
   res.status(500).json({
     success: false,
-    error: 'Internal server error'
+    error: 'Internal server error',
+    message: err.message
   });
 });
 
