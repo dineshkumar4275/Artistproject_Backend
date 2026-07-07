@@ -90,14 +90,11 @@ router.get('/photography', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      // If image_data exists (Neon DB storage), generate URL to fetch it
       let imageUrl = row.url || '';
       
       if (row.image_data) {
-        // For images stored in Neon DB
         imageUrl = `/api/images/photography/image/${row.id}`;
       } else if (row.cloudinary_id) {
-        // For legacy Cloudinary images
         try {
           imageUrl = getSignedUrl(row.cloudinary_id) || row.url || '';
         } catch (e) {
@@ -137,7 +134,7 @@ router.get('/photography/image/:id', async (req, res) => {
     console.log(`📸 Fetching image ${id} from Neon DB...`);
     
     const result = await pool.query(
-      'SELECT id, title, description, image_data, image_type FROM images WHERE id = $1 AND type = $2',
+      'SELECT image_data, image_type FROM images WHERE id = $1 AND type = $2',
       [id, 'photography']
     );
     
@@ -151,9 +148,8 @@ router.get('/photography/image/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Image data not found' });
     }
     
-    // Send image as binary data
     res.setHeader('Content-Type', image.image_type || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
     res.send(image.image_data);
     
   } catch (error) {
@@ -178,7 +174,6 @@ router.post('/photography/upload', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
-    // Check if JPEG
     if (!req.file.mimetype.includes('jpeg') && !req.file.mimetype.includes('jpg')) {
       return res.status(400).json({ 
         success: false, 
@@ -186,7 +181,6 @@ router.post('/photography/upload', upload.single('image'), async (req, res) => {
       });
     }
 
-    // Check file size (max 10MB)
     if (req.file.size > 10 * 1024 * 1024) {
       return res.status(400).json({ 
         success: false, 
@@ -194,7 +188,6 @@ router.post('/photography/upload', upload.single('image'), async (req, res) => {
       });
     }
 
-    // ✅ Save image directly to Neon DB
     const query = `
       INSERT INTO images (title, description, image_data, image_type, type, created_at)
       VALUES ($1, $2, $3, $4, $5, NOW())
@@ -204,7 +197,7 @@ router.post('/photography/upload', upload.single('image'), async (req, res) => {
     const values = [
       title, 
       description || '', 
-      req.file.buffer, // Store binary data
+      req.file.buffer,
       req.file.mimetype,
       'photography'
     ];
@@ -370,9 +363,6 @@ router.post('/url', async (req, res) => {
   try {
     const { imageUrl, title, description, secret } = req.body;
     
-    console.log('🔑 Secret received:', secret ? 'Yes' : 'No');
-    console.log('🔑 Expected secret:', UPLOAD_SECRET);
-    
     if (!secret || secret !== UPLOAD_SECRET) {
       console.log('❌ Invalid secret');
       return res.status(403).json({ 
@@ -452,7 +442,6 @@ router.post('/photography', upload.single('image'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
-    // Check if JPEG
     if (!req.file.mimetype.includes('jpeg') && !req.file.mimetype.includes('jpg')) {
       return res.status(400).json({ 
         success: false, 
@@ -537,16 +526,14 @@ router.delete('/:id', async (req, res) => {
 
     const image = imageQuery.rows[0];
 
-    // Delete from Cloudinary if cloudinary_id exists
     if (image.cloudinary_id) {
       try {
         await cloudinary.uploader.destroy(image.cloudinary_id);
       } catch (e) {
-        console.log('⚠️ Cloudinary delete failed (image may already be deleted):', e.message);
+        console.log('⚠️ Cloudinary delete failed:', e.message);
       }
     }
     
-    // Delete from database
     await pool.query('DELETE FROM images WHERE id = $1', [id]);
 
     res.json({ success: true, message: 'Image deleted successfully' });
@@ -563,7 +550,6 @@ router.delete('/', async (req, res) => {
   try {
     const images = await pool.query('SELECT * FROM images');
 
-    // Delete from Cloudinary if cloudinary_id exists
     for (const image of images.rows) {
       if (image.cloudinary_id) {
         try {
