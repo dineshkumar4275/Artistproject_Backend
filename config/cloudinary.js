@@ -12,26 +12,11 @@ cloudinary.config({
 
 console.log('✅ Cloudinary configured successfully');
 
-export const getSignedUrl = (publicId, expiresIn = 86400) => {
+export const getImageUrl = (publicId) => {
   try {
     if (!publicId) return '';
     
-    // Check if it's a private image (starts with 'private/')
-    if (publicId.includes('private')) {
-      // Generate signed URL for private images
-      const url = cloudinary.utils.private_download_url(
-        publicId,
-        'jpg',
-        { 
-          expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-          secure: true,
-          sign_url: true
-        }
-      );
-      return url;
-    }
-    
-    // For public images, just use the URL
+    // ✅ Simply return the public URL - no signing needed
     return `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/${publicId}.jpg`;
   } catch (error) {
     console.error('Error generating URL for:', publicId, error);
