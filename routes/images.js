@@ -79,11 +79,17 @@ router.get('/photography', async (req, res) => {
     
     console.log(`✅ Found ${result.rows.length} photography images`);
     
+    // Get the base URL from request
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const baseUrl = `${protocol}://${host}`;
+    
     const images = result.rows.map(row => {
       let imageUrl = '';
       
       if (row.image_data) {
-        imageUrl = `/api/images/photography/image/${row.id}`;
+        // Construct full URL
+        imageUrl = `${baseUrl}/api/images/photography/image/${row.id}`;
       }
       
       return {
