@@ -1,7 +1,7 @@
 // backend/routes/images.js
 import express from 'express';
 import pool, { ensureTables } from '../config/db.js';
-import cloudinary from '../config/cloudinary.js';
+import cloudinary, { getSignedUrl } from '../config/cloudinary.js';
 import upload from '../middleware/upload.js';
 
 const router = express.Router();
@@ -24,17 +24,8 @@ router.get('/', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} gallery images`);
     
     const images = result.rows.map(row => {
-      let signedUrl = '';
-      try {
-        signedUrl = cloudinary.utils.private_download_url(
-          row.cloudinary_id,
-          'jpg',
-          { expires_at: Math.floor(Date.now() / 1000) + 3600 }
-        );
-      } catch (e) {
-        console.error('Error generating signed URL for:', row.cloudinary_id);
-        signedUrl = row.url || '';
-      }
+      // ✅ Use getSignedUrl helper
+      const signedUrl = getSignedUrl(row.cloudinary_id);
       
       return {
         id: row.id,
@@ -75,17 +66,8 @@ router.get('/photography', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      let signedUrl = '';
-      try {
-        signedUrl = cloudinary.utils.private_download_url(
-          row.cloudinary_id,
-          'jpg',
-          { expires_at: Math.floor(Date.now() / 1000) + 3600 }
-        );
-      } catch (e) {
-        console.error('Error generating signed URL for:', row.cloudinary_id);
-        signedUrl = row.url || '';
-      }
+      // ✅ Use getSignedUrl helper
+      const signedUrl = getSignedUrl(row.cloudinary_id);
       
       return {
         id: row.id,
@@ -133,7 +115,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'Gallery',
+          folder: 'gallery', // ✅ lowercase
           resource_type: 'auto',
           type: 'private',
           transformation: [
@@ -163,16 +145,8 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    let signedUrl = '';
-    try {
-      signedUrl = cloudinary.utils.private_download_url(
-        image.cloudinary_id,
-        'jpg',
-        { expires_at: Math.floor(Date.now() / 1000) + 3600 }
-      );
-    } catch (e) {
-      signedUrl = image.url || '';
-    }
+    // ✅ Use getSignedUrl helper
+    const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
       id: image.id,
@@ -225,7 +199,7 @@ router.post('/url', async (req, res) => {
 
     console.log('📤 Uploading to Cloudinary...');
     const result = await cloudinary.uploader.upload(imageUrl, {
-      folder: 'Gallery',
+      folder: 'gallery', // ✅ lowercase
       resource_type: 'auto',
       type: 'private',
       transformation: [
@@ -247,16 +221,8 @@ router.post('/url', async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    let signedUrl = '';
-    try {
-      signedUrl = cloudinary.utils.private_download_url(
-        image.cloudinary_id,
-        'jpg',
-        { expires_at: Math.floor(Date.now() / 1000) + 3600 }
-      );
-    } catch (e) {
-      signedUrl = image.url || '';
-    }
+    // ✅ Use getSignedUrl helper
+    const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
       id: image.id,
@@ -309,7 +275,7 @@ router.post('/photography', upload.single('image'), async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'photography',
+          folder: 'photography', // ✅ lowercase
           resource_type: 'auto',
           type: 'private',
           transformation: [
@@ -341,16 +307,8 @@ router.post('/photography', upload.single('image'), async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    let signedUrl = '';
-    try {
-      signedUrl = cloudinary.utils.private_download_url(
-        image.cloudinary_id,
-        'jpg',
-        { expires_at: Math.floor(Date.now() / 1000) + 3600 }
-      );
-    } catch (e) {
-      signedUrl = image.url || '';
-    }
+    // ✅ Use getSignedUrl helper
+    const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
       id: image.id,
