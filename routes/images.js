@@ -24,7 +24,6 @@ router.get('/', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} gallery images`);
     
     const images = result.rows.map(row => {
-      // ✅ Use getSignedUrl helper
       const signedUrl = getSignedUrl(row.cloudinary_id);
       
       return {
@@ -66,7 +65,6 @@ router.get('/photography', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      // ✅ Use getSignedUrl helper
       const signedUrl = getSignedUrl(row.cloudinary_id);
       
       return {
@@ -95,6 +93,56 @@ router.get('/photography', async (req, res) => {
 });
 
 // =======================
+// SAVE PHOTOGRAPHY IMAGE (After Cloudinary Direct Upload)
+// =======================
+router.post('/photography/save', async (req, res) => {
+  try {
+    console.log('📸 Saving photography image to database...');
+    
+    const { title, description, cloudinary_id, url, type } = req.body;
+    
+    if (!title || !cloudinary_id || !url) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Title, cloudinary_id, and url are required' 
+      });
+    }
+
+    const query = `
+      INSERT INTO images (title, description, cloudinary_id, url, type)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `;
+    const values = [title, description || '', cloudinary_id, url, type || 'photography'];
+    const dbResult = await pool.query(query, values);
+    
+    console.log('✅ Database save successful');
+    
+    const image = dbResult.rows[0];
+    res.status(201).json({
+      success: true,
+      id: image.id,
+      title: image.title,
+      description: image.description || '',
+      url: image.url,
+      cloudinary_id: image.cloudinary_id,
+      type: image.type || 'photography',
+      is_featured: image.is_featured || false,
+      created_at: image.created_at,
+      createdAt: image.created_at
+    });
+    
+  } catch (error) {
+    console.error('❌ Save error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to save photography image',
+      details: error.message 
+    });
+  }
+});
+
+// =======================
 // UPLOAD GALLERY IMAGE FILE
 // =======================
 router.post('/', upload.single('image'), async (req, res) => {
@@ -115,7 +163,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'gallery', // ✅ lowercase
+          folder: 'gallery',
           resource_type: 'auto',
           type: 'private',
           transformation: [
@@ -145,7 +193,6 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    // ✅ Use getSignedUrl helper
     const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
@@ -199,7 +246,7 @@ router.post('/url', async (req, res) => {
 
     console.log('📤 Uploading to Cloudinary...');
     const result = await cloudinary.uploader.upload(imageUrl, {
-      folder: 'gallery', // ✅ lowercase
+      folder: 'gallery',
       resource_type: 'auto',
       type: 'private',
       transformation: [
@@ -221,7 +268,6 @@ router.post('/url', async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    // ✅ Use getSignedUrl helper
     const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
@@ -247,11 +293,11 @@ router.post('/url', async (req, res) => {
 });
 
 // =======================
-// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY
+// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY (Legacy - Keep for compatibility)
 // =======================
 router.post('/photography', upload.single('image'), async (req, res) => {
   try {
-    console.log('📸 Photography upload started');
+    console.log('📸 Photography upload started (legacy)');
     
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No image file provided' });
@@ -275,7 +321,7 @@ router.post('/photography', upload.single('image'), async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'photography', // ✅ lowercase
+          folder: 'photography',
           resource_type: 'auto',
           type: 'private',
           transformation: [
@@ -307,7 +353,6 @@ router.post('/photography', upload.single('image'), async (req, res) => {
 
     const image = dbResult.rows[0];
     
-    // ✅ Use getSignedUrl helper
     const signedUrl = getSignedUrl(image.cloudinary_id);
 
     res.status(201).json({
