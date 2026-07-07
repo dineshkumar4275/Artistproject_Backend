@@ -133,7 +133,7 @@ router.post('/', upload.single('image'), async (req, res) => {
     const result = await new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'gallery',
+          folder: 'Gallery',
           resource_type: 'auto',
           type: 'private',
           transformation: [
@@ -225,7 +225,7 @@ router.post('/url', async (req, res) => {
 
     console.log('📤 Uploading to Cloudinary...');
     const result = await cloudinary.uploader.upload(imageUrl, {
-      folder: 'gallery',
+      folder: 'Gallery',
       resource_type: 'auto',
       type: 'private',
       transformation: [
