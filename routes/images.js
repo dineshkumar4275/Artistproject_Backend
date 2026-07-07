@@ -65,25 +65,64 @@ router.get('/', async (req, res) => {
 });
 
 // =======================
-// GET ALL PHOTOGRAPHY IMAGES (from Neon DB)
+// GET ALL PHOTOGRAPHY IMAGES
 // =======================
-// backend/routes/images.js - Update the image endpoint
+router.get('/photography', async (req, res) => {
+  try {
+    console.log('📸 Fetching photography images from Neon DB...');
+    
+    const result = await pool.query(
+      "SELECT id, title, description, image_data, image_type, type, is_featured, created_at FROM images WHERE type = 'photography' ORDER BY created_at DESC"
+    );
+    
+    console.log(`✅ Found ${result.rows.length} photography images`);
+    
+    // Get base URL
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || 'artistproject-backend.vercel.app';
+    const baseUrl = `${protocol}://${host}`;
+    
+    const images = result.rows.map(row => {
+      let imageUrl = '';
+      
+      if (row.image_data) {
+        imageUrl = `${baseUrl}/api/images/photography/image/${row.id}`;
+      }
+      
+      return {
+        id: row.id,
+        title: row.title || 'Untitled',
+        description: row.description || '',
+        url: imageUrl,
+        imageUrl: imageUrl,
+        image_type: row.image_type || 'image/jpeg',
+        type: row.type || 'photography',
+        is_featured: row.is_featured || false,
+        created_at: row.created_at,
+        createdAt: row.created_at,
+        is_stored_in_db: !!row.image_data
+      };
+    });
+    
+    res.json(images);
+  } catch (error) {
+    console.error('❌ Error fetching photography images:', error);
+    res.json([]);
+  }
+});
 
 // =======================
-// GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB
+// GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB (ONLY ONE DEFINITION)
 // =======================
 router.get('/photography/image/:id', async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`📸 Fetching image ${id} from Neon DB...`);
     
-    // ✅ Select ALL columns including image_data
     const result = await pool.query(
-      'SELECT id, title, description, image_data, image_type, type FROM images WHERE id = $1',
-      [id]
+      'SELECT id, title, description, image_data, image_type FROM images WHERE id = $1 AND type = $2',
+      [id, 'photography']
     );
-    
-    console.log('📊 Query result rows:', result.rows.length);
     
     if (result.rows.length === 0) {
       console.log(`❌ Image ${id} not found`);
@@ -92,16 +131,13 @@ router.get('/photography/image/:id', async (req, res) => {
     
     const image = result.rows[0];
     
-    // ✅ Check if image_data exists
     if (!image.image_data) {
       console.log(`❌ Image ${id} has no data`);
       return res.status(404).json({ success: false, error: 'Image data not found' });
     }
     
     console.log(`✅ Image ${id} found, size: ${image.image_data.length} bytes`);
-    console.log(`✅ Image type: ${image.image_type || 'image/jpeg'}`);
     
-    // ✅ Set proper headers and send image
     res.setHeader('Content-Type', image.image_type || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=31536000');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -112,48 +148,6 @@ router.get('/photography/image/:id', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to fetch image', details: error.message });
   }
 });
-// =======================
-// GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB
-// =======================
-router.get('/photography/image/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    console.log(`📸 Fetching image ${id} from Neon DB...`);
-    
-    const result = await pool.query(
-      'SELECT image_data, image_type FROM images WHERE id = $1 AND type = $2',
-      [id, 'photography']
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ success: false, error: 'Image not found' });
-    }
-    
-    const image = result.rows[0];
-    
-    if (!image.image_data) {
-      return res.status(404).json({ success: false, error: 'Image data not found' });
-    }
-    
-    res.setHeader('Content-Type', image.image_type || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=31536000');
-    res.send(image.image_data);
-    
-  } catch (error) {
-    console.error('❌ Error fetching image:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch image' });
-  }
-});
-
-// =======================
-// UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
-// =======================
-// backend/routes/images.js - Add this route
-
-// =======================
-// UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
-// =======================
-// backend/routes/images.js - Update neon-upload route
 
 // =======================
 // UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
@@ -166,11 +160,11 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
 
-    console.log('📎 File details:', {
-      originalname: req.file.originalname,
+    console.log('📎 File:', {
+      name: req.file.originalname,
       mimetype: req.file.mimetype,
       size: req.file.size,
-      buffer_size: req.file.buffer ? req.file.buffer.length : 0
+      buffer_exists: !!req.file.buffer
     });
 
     const { title, description } = req.body;
@@ -192,7 +186,7 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
       });
     }
 
-    // ✅ Save image data to Neon DB
+    // ✅ Insert with image_data
     const query = `
       INSERT INTO images (title, description, image_data, image_type, type, created_at)
       VALUES ($1, $2, $3, $4, $5, NOW())
@@ -202,7 +196,7 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
     const values = [
       title.trim(), 
       description ? description.trim() : '', 
-      req.file.buffer, // This is the binary image data
+      req.file.buffer,
       req.file.mimetype,
       'photography'
     ];
@@ -213,14 +207,10 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
     console.log('✅ Image saved to Neon DB:', image.id);
     console.log('✅ Image data size stored:', req.file.buffer.length);
 
-    // ✅ Construct full URL
     const protocol = req.protocol || 'https';
     const host = req.get('host') || 'artistproject-backend.vercel.app';
     const baseUrl = `${protocol}://${host}`;
     
-    const imageUrl = `${baseUrl}/api/images/photography/image/${image.id}`;
-    console.log('✅ Image URL:', imageUrl);
-
     res.status(201).json({
       success: true,
       id: image.id,
@@ -230,8 +220,7 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
       type: image.type || 'photography',
       created_at: image.created_at,
       createdAt: image.created_at,
-      url: imageUrl,
-      imageUrl: imageUrl
+      url: `${baseUrl}/api/images/photography/image/${image.id}`
     });
     
   } catch (error) {
@@ -555,6 +544,22 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('❌ Delete error:', error);
     res.status(500).json({ success: false, error: 'Failed to delete image' });
+  }
+});
+
+// =======================
+// DEBUG - Check image data
+// =======================
+router.get('/photography/debug/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'SELECT id, title, image_data IS NOT NULL as has_data, LENGTH(image_data) as data_size, image_type FROM images WHERE id = $1',
+      [id]
+    );
+    res.json(result.rows[0] || { error: 'Not found' });
+  } catch (error) {
+    res.json({ error: error.message });
   }
 });
 
