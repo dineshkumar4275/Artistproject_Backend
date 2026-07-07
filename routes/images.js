@@ -67,39 +67,23 @@ router.get('/', async (req, res) => {
 // =======================
 // GET ALL PHOTOGRAPHY IMAGES (from Neon DB)
 // =======================
+// backend/routes/images.js - Update GET photography
+
 router.get('/photography', async (req, res) => {
   try {
     console.log('📸 Fetching photography images from Neon DB...');
     
-    const tableCheck = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'images'
-      );
-    `);
-    
-    if (!tableCheck.rows[0].exists) {
-      console.log('⚠️ Images table does not exist yet');
-      return res.json([]);
-    }
-    
     const result = await pool.query(
-      "SELECT id, title, description, cloudinary_id, url, image_data, image_type, type, is_featured, created_at FROM images WHERE type = 'photography' ORDER BY created_at DESC"
+      "SELECT id, title, description, image_data, image_type, type, is_featured, created_at FROM images WHERE type = 'photography' ORDER BY created_at DESC"
     );
     
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      let imageUrl = row.url || '';
+      let imageUrl = '';
       
       if (row.image_data) {
         imageUrl = `/api/images/photography/image/${row.id}`;
-      } else if (row.cloudinary_id) {
-        try {
-          imageUrl = getSignedUrl(row.cloudinary_id) || row.url || '';
-        } catch (e) {
-          imageUrl = row.url || '';
-        }
       }
       
       return {
@@ -108,7 +92,6 @@ router.get('/photography', async (req, res) => {
         description: row.description || '',
         url: imageUrl,
         imageUrl: imageUrl,
-        cloudinary_id: row.cloudinary_id || '',
         image_type: row.image_type || 'image/jpeg',
         type: row.type || 'photography',
         is_featured: row.is_featured || false,
@@ -124,7 +107,6 @@ router.get('/photography', async (req, res) => {
     res.json([]);
   }
 });
-
 // =======================
 // GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB
 // =======================
