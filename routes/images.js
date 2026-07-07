@@ -17,6 +17,19 @@ router.get('/', async (req, res) => {
   try {
     console.log('📸 Fetching gallery images...');
     
+    // First, check if table exists
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'images'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.log('⚠️ Images table does not exist yet');
+      return res.json([]);
+    }
+    
     const result = await pool.query(
       "SELECT * FROM images WHERE type = 'gallery' OR type IS NULL ORDER BY created_at DESC"
     );
@@ -24,15 +37,20 @@ router.get('/', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} gallery images`);
     
     const images = result.rows.map(row => {
-      const signedUrl = getSignedUrl(row.cloudinary_id);
+      let signedUrl = '';
+      try {
+        signedUrl = getSignedUrl(row.cloudinary_id);
+      } catch (e) {
+        console.error('Error getting signed URL for:', row.id, e.message);
+      }
       
       return {
         id: row.id,
-        title: row.title,
+        title: row.title || 'Untitled',
         description: row.description || '',
-        url: signedUrl || row.url,
-        imageUrl: signedUrl || row.url,
-        cloudinary_id: row.cloudinary_id,
+        url: signedUrl || row.url || '',
+        imageUrl: signedUrl || row.url || '',
+        cloudinary_id: row.cloudinary_id || '',
         type: row.type || 'gallery',
         is_featured: row.is_featured || false,
         created_at: row.created_at,
@@ -43,11 +61,8 @@ router.get('/', async (req, res) => {
     res.json(images);
   } catch (error) {
     console.error('❌ Error fetching gallery images:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch images',
-      details: error.message 
-    });
+    // Return empty array instead of 500 to prevent breaking the frontend
+    res.json([]);
   }
 });
 
@@ -58,6 +73,19 @@ router.get('/photography', async (req, res) => {
   try {
     console.log('📸 Fetching photography images...');
     
+    // First, check if table exists
+    const tableCheck = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'images'
+      );
+    `);
+    
+    if (!tableCheck.rows[0].exists) {
+      console.log('⚠️ Images table does not exist yet');
+      return res.json([]);
+    }
+    
     const result = await pool.query(
       "SELECT * FROM images WHERE type = 'photography' ORDER BY created_at DESC"
     );
@@ -65,15 +93,20 @@ router.get('/photography', async (req, res) => {
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      const signedUrl = getSignedUrl(row.cloudinary_id);
+      let signedUrl = '';
+      try {
+        signedUrl = getSignedUrl(row.cloudinary_id);
+      } catch (e) {
+        console.error('Error getting signed URL for:', row.id, e.message);
+      }
       
       return {
         id: row.id,
-        title: row.title,
+        title: row.title || 'Untitled',
         description: row.description || '',
-        url: signedUrl || row.url,
-        imageUrl: signedUrl || row.url,
-        cloudinary_id: row.cloudinary_id,
+        url: signedUrl || row.url || '',
+        imageUrl: signedUrl || row.url || '',
+        cloudinary_id: row.cloudinary_id || '',
         type: row.type || 'photography',
         is_featured: row.is_featured || false,
         created_at: row.created_at,
@@ -84,11 +117,8 @@ router.get('/photography', async (req, res) => {
     res.json(images);
   } catch (error) {
     console.error('❌ Error fetching photography images:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch photography images',
-      details: error.message 
-    });
+    // Return empty array instead of 500
+    res.json([]);
   }
 });
 
@@ -293,7 +323,7 @@ router.post('/url', async (req, res) => {
 });
 
 // =======================
-// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY (Legacy - Keep for compatibility)
+// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY (Legacy)
 // =======================
 router.post('/photography', upload.single('image'), async (req, res) => {
   try {
