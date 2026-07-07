@@ -67,50 +67,49 @@ router.get('/', async (req, res) => {
 // =======================
 // GET ALL PHOTOGRAPHY IMAGES (from Neon DB)
 // =======================
-// backend/routes/images.js - Update GET photography
+// backend/routes/images.js - Update the image endpoint
 
-router.get('/photography', async (req, res) => {
+// =======================
+// GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB
+// =======================
+router.get('/photography/image/:id', async (req, res) => {
   try {
-    console.log('📸 Fetching photography images from Neon DB...');
+    const { id } = req.params;
+    console.log(`📸 Fetching image ${id} from Neon DB...`);
     
+    // ✅ Select ALL columns including image_data
     const result = await pool.query(
-      "SELECT id, title, description, image_data, image_type, type, is_featured, created_at FROM images WHERE type = 'photography' ORDER BY created_at DESC"
+      'SELECT id, title, description, image_data, image_type, type FROM images WHERE id = $1',
+      [id]
     );
     
-    console.log(`✅ Found ${result.rows.length} photography images`);
+    console.log('📊 Query result rows:', result.rows.length);
     
-    // Get the base URL from request
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const baseUrl = `${protocol}://${host}`;
+    if (result.rows.length === 0) {
+      console.log(`❌ Image ${id} not found`);
+      return res.status(404).json({ success: false, error: 'Image not found' });
+    }
     
-    const images = result.rows.map(row => {
-      let imageUrl = '';
-      
-      if (row.image_data) {
-        // Construct full URL
-        imageUrl = `${baseUrl}/api/images/photography/image/${row.id}`;
-      }
-      
-      return {
-        id: row.id,
-        title: row.title || 'Untitled',
-        description: row.description || '',
-        url: imageUrl,
-        imageUrl: imageUrl,
-        image_type: row.image_type || 'image/jpeg',
-        type: row.type || 'photography',
-        is_featured: row.is_featured || false,
-        created_at: row.created_at,
-        createdAt: row.created_at,
-        is_stored_in_db: !!row.image_data
-      };
-    });
+    const image = result.rows[0];
     
-    res.json(images);
+    // ✅ Check if image_data exists
+    if (!image.image_data) {
+      console.log(`❌ Image ${id} has no data`);
+      return res.status(404).json({ success: false, error: 'Image data not found' });
+    }
+    
+    console.log(`✅ Image ${id} found, size: ${image.image_data.length} bytes`);
+    console.log(`✅ Image type: ${image.image_type || 'image/jpeg'}`);
+    
+    // ✅ Set proper headers and send image
+    res.setHeader('Content-Type', image.image_type || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(image.image_data);
+    
   } catch (error) {
-    console.error('❌ Error fetching photography images:', error);
-    res.json([]);
+    console.error('❌ Error fetching image:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch image', details: error.message });
   }
 });
 // =======================
