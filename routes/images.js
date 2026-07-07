@@ -161,7 +161,12 @@ router.get('/photography/image/:id', async (req, res) => {
 // =======================
 // UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
 // =======================
-router.post('/photography/upload', upload.single('image'), async (req, res) => {
+// backend/routes/images.js - Add this route
+
+// =======================
+// UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
+// =======================
+router.post('/photography/neon-upload', upload.single('image'), async (req, res) => {
   try {
     console.log('📸 Photography upload started (Neon DB storage)');
     
