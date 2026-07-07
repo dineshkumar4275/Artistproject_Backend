@@ -153,6 +153,11 @@ router.get('/photography/image/:id', async (req, res) => {
 // =======================
 // UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
 // =======================
+// backend/routes/images.js - Update neon-upload route
+
+// =======================
+// UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
+// =======================
 router.post('/photography/neon-upload', upload.single('image'), async (req, res) => {
   try {
     console.log('📸 Photography upload started (Neon DB storage)');
@@ -161,8 +166,15 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
       return res.status(400).json({ success: false, error: 'No image file provided' });
     }
 
+    console.log('📎 File details:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      buffer_size: req.file.buffer ? req.file.buffer.length : 0
+    });
+
     const { title, description } = req.body;
-    if (!title) {
+    if (!title || !title.trim()) {
       return res.status(400).json({ success: false, error: 'Title is required' });
     }
 
@@ -176,10 +188,11 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
     if (req.file.size > 10 * 1024 * 1024) {
       return res.status(400).json({ 
         success: false, 
-        error: 'File size exceeds 10MB limit' 
+        error: `File size exceeds 10MB limit` 
       });
     }
 
+    // ✅ Save image data to Neon DB
     const query = `
       INSERT INTO images (title, description, image_data, image_type, type, created_at)
       VALUES ($1, $2, $3, $4, $5, NOW())
@@ -187,9 +200,9 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
     `;
     
     const values = [
-      title, 
-      description || '', 
-      req.file.buffer,
+      title.trim(), 
+      description ? description.trim() : '', 
+      req.file.buffer, // This is the binary image data
       req.file.mimetype,
       'photography'
     ];
@@ -198,6 +211,15 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
     const image = dbResult.rows[0];
     
     console.log('✅ Image saved to Neon DB:', image.id);
+    console.log('✅ Image data size stored:', req.file.buffer.length);
+
+    // ✅ Construct full URL
+    const protocol = req.protocol || 'https';
+    const host = req.get('host') || 'artistproject-backend.vercel.app';
+    const baseUrl = `${protocol}://${host}`;
+    
+    const imageUrl = `${baseUrl}/api/images/photography/image/${image.id}`;
+    console.log('✅ Image URL:', imageUrl);
 
     res.status(201).json({
       success: true,
@@ -208,7 +230,8 @@ router.post('/photography/neon-upload', upload.single('image'), async (req, res)
       type: image.type || 'photography',
       created_at: image.created_at,
       createdAt: image.created_at,
-      url: `/api/images/photography/image/${image.id}`
+      url: imageUrl,
+      imageUrl: imageUrl
     });
     
   } catch (error) {
