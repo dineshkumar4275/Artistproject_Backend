@@ -17,7 +17,6 @@ router.get('/', async (req, res) => {
   try {
     console.log('📸 Fetching gallery images...');
     
-    // First, check if table exists
     const tableCheck = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -61,19 +60,17 @@ router.get('/', async (req, res) => {
     res.json(images);
   } catch (error) {
     console.error('❌ Error fetching gallery images:', error);
-    // Return empty array instead of 500 to prevent breaking the frontend
     res.json([]);
   }
 });
 
 // =======================
-// GET ALL PHOTOGRAPHY IMAGES
+// GET ALL PHOTOGRAPHY IMAGES (from Neon DB)
 // =======================
 router.get('/photography', async (req, res) => {
   try {
-    console.log('📸 Fetching photography images...');
+    console.log('📸 Fetching photography images from Neon DB...');
     
-    // First, check if table exists
     const tableCheck = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -87,43 +84,160 @@ router.get('/photography', async (req, res) => {
     }
     
     const result = await pool.query(
-      "SELECT * FROM images WHERE type = 'photography' ORDER BY created_at DESC"
+      "SELECT id, title, description, cloudinary_id, url, image_data, image_type, type, is_featured, created_at FROM images WHERE type = 'photography' ORDER BY created_at DESC"
     );
     
     console.log(`✅ Found ${result.rows.length} photography images`);
     
     const images = result.rows.map(row => {
-      let signedUrl = '';
-      try {
-        signedUrl = getSignedUrl(row.cloudinary_id);
-      } catch (e) {
-        console.error('Error getting signed URL for:', row.id, e.message);
+      // If image_data exists (Neon DB storage), generate URL to fetch it
+      let imageUrl = row.url || '';
+      
+      if (row.image_data) {
+        // For images stored in Neon DB
+        imageUrl = `/api/images/photography/image/${row.id}`;
+      } else if (row.cloudinary_id) {
+        // For legacy Cloudinary images
+        try {
+          imageUrl = getSignedUrl(row.cloudinary_id) || row.url || '';
+        } catch (e) {
+          imageUrl = row.url || '';
+        }
       }
       
       return {
         id: row.id,
         title: row.title || 'Untitled',
         description: row.description || '',
-        url: signedUrl || row.url || '',
-        imageUrl: signedUrl || row.url || '',
+        url: imageUrl,
+        imageUrl: imageUrl,
         cloudinary_id: row.cloudinary_id || '',
+        image_type: row.image_type || 'image/jpeg',
         type: row.type || 'photography',
         is_featured: row.is_featured || false,
         created_at: row.created_at,
-        createdAt: row.created_at
+        createdAt: row.created_at,
+        is_stored_in_db: !!row.image_data
       };
     });
     
     res.json(images);
   } catch (error) {
     console.error('❌ Error fetching photography images:', error);
-    // Return empty array instead of 500
     res.json([]);
   }
 });
 
 // =======================
-// SAVE PHOTOGRAPHY IMAGE (After Cloudinary Direct Upload)
+// GET SINGLE PHOTOGRAPHY IMAGE FROM NEON DB
+// =======================
+router.get('/photography/image/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`📸 Fetching image ${id} from Neon DB...`);
+    
+    const result = await pool.query(
+      'SELECT id, title, description, image_data, image_type FROM images WHERE id = $1 AND type = $2',
+      [id, 'photography']
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Image not found' });
+    }
+    
+    const image = result.rows[0];
+    
+    if (!image.image_data) {
+      return res.status(404).json({ success: false, error: 'Image data not found' });
+    }
+    
+    // Send image as binary data
+    res.setHeader('Content-Type', image.image_type || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache for 1 year
+    res.send(image.image_data);
+    
+  } catch (error) {
+    console.error('❌ Error fetching image:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch image' });
+  }
+});
+
+// =======================
+// UPLOAD PHOTOGRAPHY IMAGE TO NEON DB
+// =======================
+router.post('/photography/upload', upload.single('image'), async (req, res) => {
+  try {
+    console.log('📸 Photography upload started (Neon DB storage)');
+    
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file provided' });
+    }
+
+    const { title, description } = req.body;
+    if (!title) {
+      return res.status(400).json({ success: false, error: 'Title is required' });
+    }
+
+    // Check if JPEG
+    if (!req.file.mimetype.includes('jpeg') && !req.file.mimetype.includes('jpg')) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Only JPEG/JPG images are allowed' 
+      });
+    }
+
+    // Check file size (max 10MB)
+    if (req.file.size > 10 * 1024 * 1024) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'File size exceeds 10MB limit' 
+      });
+    }
+
+    // ✅ Save image directly to Neon DB
+    const query = `
+      INSERT INTO images (title, description, image_data, image_type, type, created_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      RETURNING id, title, description, image_type, type, created_at
+    `;
+    
+    const values = [
+      title, 
+      description || '', 
+      req.file.buffer, // Store binary data
+      req.file.mimetype,
+      'photography'
+    ];
+    
+    const dbResult = await pool.query(query, values);
+    const image = dbResult.rows[0];
+    
+    console.log('✅ Image saved to Neon DB:', image.id);
+
+    res.status(201).json({
+      success: true,
+      id: image.id,
+      title: image.title,
+      description: image.description || '',
+      image_type: image.image_type,
+      type: image.type || 'photography',
+      created_at: image.created_at,
+      createdAt: image.created_at,
+      url: `/api/images/photography/image/${image.id}`
+    });
+    
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to upload photography image',
+      details: error.message 
+    });
+  }
+});
+
+// =======================
+// SAVE PHOTOGRAPHY IMAGE (Legacy - Cloudinary)
 // =======================
 router.post('/photography/save', async (req, res) => {
   try {
@@ -323,7 +437,7 @@ router.post('/url', async (req, res) => {
 });
 
 // =======================
-// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY (Legacy)
+// UPLOAD PHOTOGRAPHY IMAGE - JPEG ONLY (Legacy - Cloudinary)
 // =======================
 router.post('/photography', upload.single('image'), async (req, res) => {
   try {
@@ -423,8 +537,14 @@ router.delete('/:id', async (req, res) => {
 
     const image = imageQuery.rows[0];
 
-    // Delete from Cloudinary
-    await cloudinary.uploader.destroy(image.cloudinary_id);
+    // Delete from Cloudinary if cloudinary_id exists
+    if (image.cloudinary_id) {
+      try {
+        await cloudinary.uploader.destroy(image.cloudinary_id);
+      } catch (e) {
+        console.log('⚠️ Cloudinary delete failed (image may already be deleted):', e.message);
+      }
+    }
     
     // Delete from database
     await pool.query('DELETE FROM images WHERE id = $1', [id]);
@@ -443,8 +563,15 @@ router.delete('/', async (req, res) => {
   try {
     const images = await pool.query('SELECT * FROM images');
 
+    // Delete from Cloudinary if cloudinary_id exists
     for (const image of images.rows) {
-      await cloudinary.uploader.destroy(image.cloudinary_id);
+      if (image.cloudinary_id) {
+        try {
+          await cloudinary.uploader.destroy(image.cloudinary_id);
+        } catch (e) {
+          console.log('⚠️ Cloudinary delete failed:', e.message);
+        }
+      }
     }
 
     await pool.query('DELETE FROM images');
